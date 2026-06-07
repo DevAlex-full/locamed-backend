@@ -1,0 +1,49 @@
+# Dependências
+node_modules/
+.npm/
+
+# Build
+dist/
+build/
+
+# Ambiente — NUNCA versionar arquivos .env com dados reais
+.env
+.env.local
+.env.development
+.env.production
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pino.log
+
+# Sistema operacional
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# Cobertura de testes
+coverage/
+.nyc_output/
+*.lcov
+
+# Vitest
+.vitest/
+
+# TypeScript
+*.tsbuildinfo
+
+# Prisma — não versionar migrações auto-geradas de dev
+# (migrations de produção SÃO versionadas — não adicionar prisma/migrations aqui)
+prisma/generated/

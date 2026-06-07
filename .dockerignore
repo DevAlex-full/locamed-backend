@@ -1,0 +1,77 @@
+# =============================================================================
+# .dockerignore — Backend
+# =============================================================================
+# Exclui arquivos desnecessários da imagem Docker.
+# Reduz tamanho da imagem e evita vazar dados sensíveis.
+#
+# Regra geral: incluir apenas o necessário para:
+#   1. npm install (package.json, package-lock.json)
+#   2. prisma generate (prisma/schema.prisma)
+#   3. tsc build (src/, tsconfig.json)
+#   4. Runtime (dist/)
+# =============================================================================
+
+# ── Dependências ──────────────────────────────────────────────────────────────
+# São instaladas dentro da imagem via `npm ci --omit=dev`
+node_modules/
+.npm/
+
+# ── Build local ───────────────────────────────────────────────────────────────
+# A imagem faz seu próprio build — não copiar build local para evitar
+# binários compilados para a arquitetura errada (ex: macOS → Linux/amd64)
+dist/
+build/
+
+# ── Ambiente — CRÍTICO: nunca deve entrar na imagem ──────────────────────────
+# Em produção, variáveis são injetadas pelo Render (Environment Variables)
+.env
+.env.*
+!.env.example
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+
+# ── Testes ────────────────────────────────────────────────────────────────────
+# Não há necessidade de testes dentro da imagem de produção
+tests/
+coverage/
+.vitest/
+*.test.ts
+*.spec.ts
+
+# ── Ferramentas de desenvolvimento ────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Sistema operacional ───────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+
+# ── Git ───────────────────────────────────────────────────────────────────────
+.git/
+.gitignore
+.gitattributes
+
+# ── TypeScript build info ─────────────────────────────────────────────────────
+*.tsbuildinfo
+
+# ── Documentação ──────────────────────────────────────────────────────────────
+README.md
+CHANGELOG.md
+docs/
+
+# ── CI/CD ─────────────────────────────────────────────────────────────────────
+.github/
+.gitlab-ci.yml
+Jenkinsfile
+
+# ── Prisma — manter apenas o necessário ──────────────────────────────────────
+# schema.prisma e migrations SÃO necessários (copiados para a imagem)
+# O generate é executado durante o build da imagem
+prisma/generated/

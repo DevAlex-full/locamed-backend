@@ -1,0 +1,579 @@
+// =============================================================================
+// Prisma Schema - Sistema SaaS de Locacao de Poltronas Pos-Cirurgicas
+// =============================================================================
+//
+// Decisoes de modelagem:
+//
+// [1] MULTI-TENANT via company_id
+//     Toda entidade de negocio carrega company_id como FK obrigatoria.
+//     Isolamento garantido em duas camadas: Repository (Prisma) + RLS (PostgreSQL).
+//
+// [2] UUID como chave primaria em todas as tabelas
+//     Gerado no cliente Prisma com @default(uuid()). Excecao: User.id nao tem
+//     @default pois deve ser igual ao auth.users.id do Supabase (provido externamente).
+//
+// [3] SOFT DELETE via deleted_at
+//     Entidades criticas usam deleted_at em vez de exclusao fisica.
+//     Entidades financeiras e de auditoria sao imutaveis por design (sem delete).
+//
+// [4] RELACOES EXPLICITAMENTE NOMEADAS
+//     Toda relacao usa @relation("NomeDescritivo") em ambos os lados.
+//     Elimina ambiguidade quando um model aparece multiplas vezes como destino.
+//
+// [5] INDICES DE PERFORMANCE
+//     Indices regulares declarados no schema via @@index com map: para nome no banco.
+//     Indices parciais (WHERE clause) em partial-indexes.sql aplicados pos-migration.
+//
+// [6] WEBHOOK_EVENTS sem company_id
+//     Webhooks chegam antes do contexto da empresa ser resolvido via payload.
+//
+// [7] DECIMAL para valores monetarios
+//     Evita erros de ponto flutuante em calculos financeiros.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum CompanyPlan {
+  free
+  basic
+  pro
+  enterprise
+}
+
+enum UserRole {
+  super_admin
+  admin
+  operator
+  driver
+  medical_partner
+  clinic_partner
+}
+
+enum ChairStatus {
+  available
+  reserved
+  in_delivery
+  rented
+  in_pickup
+  sanitization
+  maintenance
+  inactive
+}
+
+enum ChairBlockType {
+  maintenance
+  sanitization
+  manual
+  administrative
+}
+
+enum ReservationStatus {
+  pending
+  confirmed
+  active
+  completed
+  cancelled
+}
+
+enum PaymentStatus {
+  pending
+  awaiting
+  paid
+  overdue
+  refunded
+}
+
+enum DeliveryType {
+  delivery
+  pickup
+}
+
+enum PartnerType {
+  medical
+  clinic
+}
+
+enum TransactionType {
+  charge
+  refund
+  commission_payment
+}
+
+enum TransactionStatus {
+  pending
+  processing
+  paid
+  failed
+  refunded
+  cancelled
+}
+
+enum CommissionStatus {
+  pending
+  approved
+  paid
+  cancelled
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  PAYMENT
+  CONTRACT
+  VIEW
+  EXPORT
+}
+
+enum NotificationChannel {
+  whatsapp
+  email
+  sms
+}
+
+enum NotificationStatus {
+  pending
+  sent
+  failed
+  cancelled
+}
+
+// =============================================================================
+// MODELS
+// =============================================================================
+
+// Tenant raiz. Toda entidade de negocio referencia esta tabela via company_id.
+model Company {
+  id           String      @id @default(uuid()) @db.Uuid
+  name         String      @db.VarChar(255)
+  document     String      @unique @db.VarChar(20)
+  email        String      @db.VarChar(255)
+  phone        String?     @db.VarChar(20)
+  address      String?     @db.VarChar(500)
+  number       String?     @db.VarChar(20)
+  complement   String?     @db.VarChar(100)
+  neighborhood String?     @db.VarChar(100)
+  city         String?     @db.VarChar(100)
+  state        String?     @db.VarChar(2)
+  zip_code     String?     @db.VarChar(9)
+  plan         CompanyPlan @default(free)
+  active       Boolean     @default(true)
+  settings     Json        @default("{}")
+  created_at   DateTime    @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime    @updatedAt @db.Timestamptz(6)
+
+  users                  User[]                 @relation("CompanyUsers")
+  clients                Client[]               @relation("CompanyClients")
+  chairs                 Chair[]                @relation("CompanyChairs")
+  chair_blocks           ChairBlock[]           @relation("CompanyChairBlocks")
+  reservations           Reservation[]          @relation("CompanyReservations")
+  deliveries             Delivery[]             @relation("CompanyDeliveries")
+  financial_transactions FinancialTransaction[] @relation("CompanyTransactions")
+  contracts              Contract[]             @relation("CompanyContracts")
+  partners               Partner[]              @relation("CompanyPartners")
+  commissions            Commission[]           @relation("CompanyCommissions")
+  audit_logs             AuditLog[]             @relation("CompanyAuditLogs")
+  notification_queue     NotificationQueue[]    @relation("CompanyNotifications")
+
+  @@map("companies")
+}
+
+// Usuarios do sistema.
+// id sem @default: deve ser identico ao auth.users.id do Supabase (UUID externo).
+// Soft delete via deleted_at: historico de acoes preservado.
+model User {
+  id         String    @id @db.Uuid
+  company_id String    @db.Uuid
+  name       String    @db.VarChar(255)
+  email      String    @db.VarChar(255)
+  role       UserRole
+  phone      String?   @db.VarChar(20)
+  avatar_url String?   @db.VarChar(1000)
+  active     Boolean   @default(true)
+  deleted_at DateTime? @db.Timestamptz(6)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at DateTime  @updatedAt @db.Timestamptz(6)
+
+  company         Company      @relation("CompanyUsers", fields: [company_id], references: [id])
+  partner         Partner?     @relation("UserPartner")
+  deliveries      Delivery[]   @relation("DriverDeliveries")
+  blocks_created  ChairBlock[] @relation("BlockCreatedBy")
+  blocks_resolved ChairBlock[] @relation("BlockResolvedBy")
+  audit_logs      AuditLog[]   @relation("UserAuditLogs")
+
+  @@unique([company_id, email], map: "uq_users_company_email")
+  @@index([company_id, role], map: "idx_users_company_role")
+  @@index([company_id, active], map: "idx_users_company_active")
+  @@map("users")
+}
+
+// Clientes/pacientes que locam poltronas.
+// Soft delete: historico de reservas preservado mesmo apos exclusao logica.
+// CPF unico por empresa aplicado via partial index (partial-indexes.sql).
+model Client {
+  id           String    @id @default(uuid()) @db.Uuid
+  company_id   String    @db.Uuid
+  name         String    @db.VarChar(255)
+  cpf          String    @db.VarChar(14)
+  rg           String?   @db.VarChar(20)
+  birth_date   DateTime? @db.Date
+  phone        String    @db.VarChar(20)
+  whatsapp     String?   @db.VarChar(20)
+  email        String?   @db.VarChar(255)
+  zip_code     String?   @db.VarChar(9)
+  address      String?   @db.VarChar(500)
+  number       String?   @db.VarChar(20)
+  complement   String?   @db.VarChar(100)
+  neighborhood String?   @db.VarChar(100)
+  city         String?   @db.VarChar(100)
+  state        String?   @db.VarChar(2)
+  doctor       String?   @db.VarChar(255)
+  hospital     String?   @db.VarChar(255)
+  surgery_date DateTime? @db.Date
+  notes        String?   @db.Text
+  deleted_at   DateTime? @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @updatedAt @db.Timestamptz(6)
+
+  company      Company       @relation("CompanyClients", fields: [company_id], references: [id])
+  reservations Reservation[] @relation("ClientReservations")
+
+  @@index([company_id, cpf], map: "idx_clients_company_cpf")
+  @@index([company_id, name], map: "idx_clients_company_name")
+  @@index([company_id, phone], map: "idx_clients_company_phone")
+  @@map("clients")
+}
+
+// Inventario de poltronas.
+// Soft delete: poltrona inativada mantem historico de reservas e manutencoes.
+// Codigo unico por empresa aplicado via partial index (partial-indexes.sql).
+model Chair {
+  id                String      @id @default(uuid()) @db.Uuid
+  company_id        String      @db.Uuid
+  code              String      @db.VarChar(50)
+  patrimony_number  String?     @db.VarChar(100)
+  model             String?     @db.VarChar(255)
+  manufacturer      String?     @db.VarChar(255)
+  acquisition_date  DateTime?   @db.Date
+  acquisition_value Decimal?    @db.Decimal(10, 2)
+  status            ChairStatus @default(available)
+  notes             String?     @db.Text
+  deleted_at        DateTime?   @db.Timestamptz(6)
+  created_at        DateTime    @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime    @updatedAt @db.Timestamptz(6)
+
+  company      Company       @relation("CompanyChairs", fields: [company_id], references: [id])
+  blocks       ChairBlock[]  @relation("ChairBlocks")
+  reservations Reservation[] @relation("ChairReservations")
+
+  @@index([company_id, code], map: "idx_chairs_company_code")
+  @@index([company_id, status], map: "idx_chairs_company_status")
+  @@map("chairs")
+}
+
+// Bloqueios operacionais de poltronas (ADR-006).
+// Separado de reservations: nao tem cliente, pagamento nem contrato.
+// Motor de reservas verifica AMBAS as tabelas ao criar/alterar reservas.
+// Sem soft delete: bloqueios sao resolvidos via resolved_at (campo semantico).
+model ChairBlock {
+  id          String         @id @default(uuid()) @db.Uuid
+  company_id  String         @db.Uuid
+  chair_id    String         @db.Uuid
+  type        ChairBlockType
+  reason      String         @db.Text
+  blocked_by  String         @db.Uuid
+  start_date  DateTime       @db.Date
+  end_date    DateTime       @db.Date
+  resolved_at DateTime?      @db.Timestamptz(6)
+  resolved_by String?        @db.Uuid
+  notes       String?        @db.Text
+  created_at  DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime       @updatedAt @db.Timestamptz(6)
+
+  // Duas relacoes distintas de User: criador e resolvedor do bloqueio.
+  // Nomeacao explicita obrigatoria para evitar ambiguidade no Prisma.
+  company          Company @relation("CompanyChairBlocks", fields: [company_id], references: [id])
+  chair            Chair   @relation("ChairBlocks", fields: [chair_id], references: [id])
+  blocked_by_user  User    @relation("BlockCreatedBy", fields: [blocked_by], references: [id])
+  resolved_by_user User?   @relation("BlockResolvedBy", fields: [resolved_by], references: [id])
+
+  @@index([chair_id, start_date, end_date], map: "idx_chair_blocks_chair_dates")
+  @@index([company_id, created_at(sort: Desc)], map: "idx_chair_blocks_company")
+  @@map("chair_blocks")
+}
+
+// Core do negocio. Motor de reservas com prevencao de overbooking.
+// Lock pessimista (SELECT FOR UPDATE) implementado no ReservationService (Etapa 8).
+// Soft delete: cancelamentos preservam historico financeiro e de auditoria.
+// asaas_charge_id: nullable unique -- PostgreSQL permite multiplos NULLs em UNIQUE.
+model Reservation {
+  id              String            @id @default(uuid()) @db.Uuid
+  company_id      String            @db.Uuid
+  client_id       String            @db.Uuid
+  chair_id        String            @db.Uuid
+  partner_id      String?           @db.Uuid
+  start_date      DateTime          @db.Date
+  end_date        DateTime          @db.Date
+  status          ReservationStatus @default(pending)
+  payment_status  PaymentStatus     @default(pending)
+  daily_rate      Decimal           @db.Decimal(10, 2)
+  total_days      Int
+  total_amount    Decimal           @db.Decimal(10, 2)
+  discount        Decimal           @default(0) @db.Decimal(10, 2)
+  final_amount    Decimal           @db.Decimal(10, 2)
+  payment_method  String?           @db.VarChar(50)
+  notes           String?           @db.Text
+  asaas_charge_id String?           @unique @db.VarChar(255)
+  referral_code   String?           @db.VarChar(50)
+  deleted_at      DateTime?         @db.Timestamptz(6)
+  created_at      DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime          @updatedAt @db.Timestamptz(6)
+
+  company                Company                @relation("CompanyReservations", fields: [company_id], references: [id])
+  client                 Client                 @relation("ClientReservations", fields: [client_id], references: [id])
+  chair                  Chair                  @relation("ChairReservations", fields: [chair_id], references: [id])
+  partner                Partner?               @relation("PartnerReservations", fields: [partner_id], references: [id])
+  deliveries             Delivery[]             @relation("ReservationDeliveries")
+  financial_transactions FinancialTransaction[] @relation("ReservationTransactions")
+  contracts              Contract[]             @relation("ReservationContracts")
+  commissions            Commission[]           @relation("ReservationCommissions")
+
+  @@index([chair_id, start_date, end_date], map: "idx_reservations_chair_dates")
+  @@index([company_id, status, created_at(sort: Desc)], map: "idx_reservations_company_status")
+  @@index([company_id, client_id, created_at(sort: Desc)], map: "idx_reservations_client")
+  @@index([company_id, partner_id, created_at(sort: Desc)], map: "idx_reservations_partner")
+  @@map("reservations")
+}
+
+// Logistica de entregas e retiradas.
+// driver_id nullable: entrega pode ser criada antes de atribuir motorista.
+// Soft delete: historico de logistica preservado mesmo apos cancelamento.
+// @@unique([reservation_id, type]): garante no maximo uma entrega e uma retirada por reserva.
+model Delivery {
+  id             String       @id @default(uuid()) @db.Uuid
+  company_id     String       @db.Uuid
+  reservation_id String       @db.Uuid
+  driver_id      String?      @db.Uuid
+  type           DeliveryType
+  scheduled_at   DateTime     @db.Timestamptz(6)
+  completed_at   DateTime?    @db.Timestamptz(6)
+  address        String       @db.VarChar(500)
+  notes          String?      @db.Text
+  latitude       Decimal?     @db.Decimal(10, 8)
+  longitude      Decimal?     @db.Decimal(11, 8)
+  signature_url  String?      @db.VarChar(1000)
+  deleted_at     DateTime?    @db.Timestamptz(6)
+  created_at     DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime     @updatedAt @db.Timestamptz(6)
+
+  company     Company         @relation("CompanyDeliveries", fields: [company_id], references: [id])
+  reservation Reservation     @relation("ReservationDeliveries", fields: [reservation_id], references: [id])
+  driver      User?           @relation("DriverDeliveries", fields: [driver_id], references: [id])
+  photos      DeliveryPhoto[] @relation("DeliveryPhotos")
+
+  @@unique([reservation_id, type], map: "uq_deliveries_reservation_type")
+  @@index([driver_id, scheduled_at], map: "idx_deliveries_driver_date")
+  @@index([reservation_id], map: "idx_deliveries_reservation")
+  @@index([company_id, type, scheduled_at], map: "idx_deliveries_company_type")
+  @@map("deliveries")
+}
+
+// Fotos de entrega/retirada armazenadas no Supabase Storage.
+// Sem soft delete e sem updated_at: fotos sao imutaveis apos upload.
+model DeliveryPhoto {
+  id          String   @id @default(uuid()) @db.Uuid
+  delivery_id String   @db.Uuid
+  url         String   @db.VarChar(1000)
+  caption     String?  @db.VarChar(255)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  delivery Delivery @relation("DeliveryPhotos", fields: [delivery_id], references: [id])
+
+  @@index([delivery_id], map: "idx_delivery_photos_delivery")
+  @@map("delivery_photos")
+}
+
+// Transacoes financeiras vinculadas a reservas.
+// Sem soft delete: registros financeiros sao imutaveis por compliance.
+// asaas_id nullable unique: permite multiplos NULLs (PostgreSQL UNIQUE comportamento).
+model FinancialTransaction {
+  id             String            @id @default(uuid()) @db.Uuid
+  company_id     String            @db.Uuid
+  reservation_id String            @db.Uuid
+  type           TransactionType
+  amount         Decimal           @db.Decimal(10, 2)
+  status         TransactionStatus @default(pending)
+  payment_method String?           @db.VarChar(50)
+  asaas_id       String?           @unique @db.VarChar(255)
+  asaas_link     String?           @db.VarChar(1000)
+  due_date       DateTime          @db.Date
+  paid_at        DateTime?         @db.Timestamptz(6)
+  description    String            @db.VarChar(500)
+  metadata       Json              @default("{}")
+  created_at     DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime          @updatedAt @db.Timestamptz(6)
+
+  company     Company     @relation("CompanyTransactions", fields: [company_id], references: [id])
+  reservation Reservation @relation("ReservationTransactions", fields: [reservation_id], references: [id])
+
+  @@index([company_id, created_at(sort: Desc)], map: "idx_financial_company_date")
+  @@index([company_id, status, due_date], map: "idx_financial_company_status")
+  @@index([reservation_id], map: "idx_financial_reservation")
+  @@map("financial_transactions")
+}
+
+// Contratos gerados a partir de reservas.
+// Versioning: multiplos contratos por reserva (reenvio, atualizacao de termos).
+// @@unique([reservation_id, version]): garante numero de versao unico por reserva.
+// Sem soft delete: contratos assinados sao documentos juridicos imutaveis.
+model Contract {
+  id             String    @id @default(uuid()) @db.Uuid
+  company_id     String    @db.Uuid
+  reservation_id String    @db.Uuid
+  version        Int       @default(1)
+  storage_url    String    @db.VarChar(1000)
+  signed_at      DateTime? @db.Timestamptz(6)
+  signed_by      String?   @db.VarChar(255)
+  signature_ip   String?   @db.VarChar(50)
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @updatedAt @db.Timestamptz(6)
+
+  company     Company     @relation("CompanyContracts", fields: [company_id], references: [id])
+  reservation Reservation @relation("ReservationContracts", fields: [reservation_id], references: [id])
+
+  @@unique([reservation_id, version], map: "uq_contracts_reservation_version")
+  @@index([company_id, reservation_id, version(sort: Desc)], map: "idx_contracts_reservation_version")
+  @@map("contracts")
+}
+
+// Parceiros medicos e clinicas com programa de comissoes.
+// user_id unico globalmente: um usuario so pode ser parceiro de uma empresa.
+// Soft delete: historico de comissoes preservado mesmo apos desativacao.
+// referral_code: unicidade global aplicada via partial index (partial-indexes.sql).
+model Partner {
+  id              String      @id @default(uuid()) @db.Uuid
+  company_id      String      @db.Uuid
+  user_id         String      @unique @db.Uuid
+  type            PartnerType
+  name            String      @db.VarChar(255)
+  specialty       String?     @db.VarChar(255)
+  referral_code   String      @db.VarChar(50)
+  commission_rate Decimal     @db.Decimal(5, 2)
+  active          Boolean     @default(true)
+  deleted_at      DateTime?   @db.Timestamptz(6)
+  created_at      DateTime    @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime    @updatedAt @db.Timestamptz(6)
+
+  company      Company       @relation("CompanyPartners", fields: [company_id], references: [id])
+  user         User          @relation("UserPartner", fields: [user_id], references: [id])
+  reservations Reservation[] @relation("PartnerReservations")
+  commissions  Commission[]  @relation("PartnerCommissions")
+
+  @@index([company_id, active], map: "idx_partners_company_active")
+  @@index([referral_code], map: "idx_partners_referral_code")
+  @@map("partners")
+}
+
+// Comissoes geradas por indicacoes de parceiros.
+// Sem soft delete: registros financeiros imutaveis.
+// Cancelamento via status = cancelled (nao exclusao fisica).
+model Commission {
+  id             String           @id @default(uuid()) @db.Uuid
+  company_id     String           @db.Uuid
+  partner_id     String           @db.Uuid
+  reservation_id String           @db.Uuid
+  amount         Decimal          @db.Decimal(10, 2)
+  percentage     Decimal          @db.Decimal(5, 2)
+  status         CommissionStatus @default(pending)
+  paid_at        DateTime?        @db.Timestamptz(6)
+  notes          String?          @db.Text
+  created_at     DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime         @updatedAt @db.Timestamptz(6)
+
+  company     Company     @relation("CompanyCommissions", fields: [company_id], references: [id])
+  partner     Partner     @relation("PartnerCommissions", fields: [partner_id], references: [id])
+  reservation Reservation @relation("ReservationCommissions", fields: [reservation_id], references: [id])
+
+  @@index([partner_id, status, created_at(sort: Desc)], map: "idx_commissions_partner_status")
+  @@index([company_id, status, created_at(sort: Desc)], map: "idx_commissions_company_status")
+  @@map("commissions")
+}
+
+// Log de auditoria append-only.
+// Sem updated_at e sem soft delete: registros imutaveis por design.
+// user_id nullable: acoes de sistema (webhooks, jobs) nao tem usuario associado.
+model AuditLog {
+  id         String      @id @default(uuid()) @db.Uuid
+  company_id String      @db.Uuid
+  user_id    String?     @db.Uuid
+  action     AuditAction
+  entity     String      @db.VarChar(100)
+  entity_id  String?     @db.VarChar(255)
+  old_values Json?
+  new_values Json?
+  ip         String?     @db.VarChar(50)
+  user_agent String?     @db.VarChar(500)
+  created_at DateTime    @default(now()) @db.Timestamptz(6)
+
+  company Company @relation("CompanyAuditLogs", fields: [company_id], references: [id])
+  user    User?   @relation("UserAuditLogs", fields: [user_id], references: [id])
+
+  @@index([company_id, created_at(sort: Desc)], map: "idx_audit_company_date")
+  @@index([company_id, entity, entity_id], map: "idx_audit_entity")
+  @@index([company_id, user_id, created_at(sort: Desc)], map: "idx_audit_user")
+  @@map("audit_logs")
+}
+
+// Controle de idempotencia de webhooks externos.
+// Sem company_id: webhooks chegam antes do contexto ser resolvido.
+// Sem soft delete: registros de infraestrutura imutaveis.
+// @@unique([provider, event_id]): garante processamento exatamente uma vez.
+model WebhookEvent {
+  id           String    @id @default(uuid()) @db.Uuid
+  provider     String    @db.VarChar(50)
+  event_id     String    @db.VarChar(255)
+  event_type   String    @db.VarChar(100)
+  payload      Json
+  processed_at DateTime? @db.Timestamptz(6)
+  error        String?   @db.Text
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([provider, event_id], map: "uq_webhook_events_provider_event")
+  @@index([provider, created_at(sort: Desc)], map: "idx_webhook_events_provider_date")
+  @@map("webhook_events")
+}
+
+// Fila de notificacoes para WhatsApp, email e SMS.
+// Arquitetura preparada: worker de envio implementado futuramente.
+// Sem soft delete: notificacoes processadas tem estado final (sent/failed).
+model NotificationQueue {
+  id         String              @id @default(uuid()) @db.Uuid
+  company_id String              @db.Uuid
+  type       String              @db.VarChar(100)
+  channel    NotificationChannel
+  recipient  String              @db.VarChar(255)
+  payload    Json
+  status     NotificationStatus  @default(pending)
+  sent_at    DateTime?           @db.Timestamptz(6)
+  error      String?             @db.Text
+  created_at DateTime            @default(now()) @db.Timestamptz(6)
+
+  company Company @relation("CompanyNotifications", fields: [company_id], references: [id])
+
+  @@index([status, created_at(sort: Asc)], map: "idx_notifications_pending")
+  @@index([company_id, status], map: "idx_notifications_company_status")
+  @@map("notification_queue")
+}
