@@ -10,6 +10,8 @@ import { swaggerPlugin } from '@/shared/plugins/swagger'
 import { errorHandlerPlugin } from '@/shared/plugins/error-handler'
 import { multipartPlugin } from '@/shared/plugins/multipart'
 import { auditRoutes } from '@/modules/audit/audit.routes'
+import { meRoutes, userRoutes } from '@/modules/users/users.routes'
+import { companyRoutes } from '@/modules/companies/companies.routes'
 
 // =============================================================================
 // Factory da Aplicacao Fastify
@@ -19,31 +21,40 @@ import { auditRoutes } from '@/modules/audit/audit.routes'
 //   1. Plugins de infraestrutura (helmet, cors, rate-limit, multipart, swagger)
 //   2. Error handler (captura erros de tudo abaixo)
 //   3. Hook onSend (X-Request-ID em todas as respostas)
-//   4. Rota /health (publica, sem autenticacao)
-//   5. Modulos de negocio (cada um com seu prefixo e autenticacao proprios)
+//   4. Rota publica /health
+//   5. Modulos de negocio (cada um com prefixo e autorizacao proprios)
 //
-// Modulos registrados:
-//   /audit         → Etapa 5  (admin, super_admin)
-//   /clients       → Etapa 9  (pendente)
-//   /chairs        → Etapa 10 (pendente)
-//   /reservations  → Etapa 11 (pendente)
-//   /schedule      → Etapa 13 (pendente)
-//   /deliveries    → Etapa 14 (pendente)
-//   /financial     → Etapa 15 (pendente)
-//   /webhooks      → Etapa 16 (pendente)
-//   /contracts     → Etapa 17 (pendente)
-//   /partners      → Etapa 19 (pendente)
-//   /commissions   → Etapa 20 (pendente)
-//   /reports       → Etapa 22 (pendente)
+// Modulos ativos:
+//   GET  /me                    → Etapa 6 (meRoutes)
+//   GET  /users                 → Etapa 6 (userRoutes)
+//   GET  /users/:id             → Etapa 6 (userRoutes)
+//   PATCH /users/:id            → Etapa 6 (userRoutes)
+//   GET  /companies/current     → Etapa 6 (companyRoutes)
+//   PATCH /companies/current    → Etapa 6 (companyRoutes)
+//   GET  /audit                 → Etapa 5 (auditRoutes)
+//   GET  /audit/entity/:e/:id   → Etapa 5 (auditRoutes)
+//
+// Modulos pendentes (descomentados conforme implementados):
+//   /clients       → Etapa 9
+//   /chairs        → Etapa 10
+//   /reservations  → Etapa 11
+//   /schedule      → Etapa 13
+//   /deliveries    → Etapa 14
+//   /financial     → Etapa 15
+//   /webhooks      → Etapa 16
+//   /contracts     → Etapa 17
+//   /partners      → Etapa 19
+//   /commissions   → Etapa 20
+//   /reports       → Etapa 22
 // =============================================================================
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: pinoConfig,
-    genReqId: () => randomUUID(),
-    trustProxy: true,
+    logger:            pinoConfig,
+    genReqId:          () => randomUUID(),
+    trustProxy:        true,
     connectionTimeout: 30_000,
-    bodyLimit: 5 * 1024 * 1024,
+    bodyLimit:         5 * 1024 * 1024,
   })
 
   // ── Plugins de infraestrutura ──────────────────────────────────────────────
@@ -67,8 +78,8 @@ export async function buildApp(): Promise<FastifyInstance> {
       config: { rateLimit: false },
       schema: {
         description: 'Health check da aplicacao e conexao com o banco',
-        tags: ['Health'],
-        security: [],
+        tags:        ['Health'],
+        security:    [],
         response: {
           200: {
             type: 'object',
@@ -95,13 +106,13 @@ export async function buildApp(): Promise<FastifyInstance> {
     },
     async (_request, reply) => {
       let databaseStatus = 'healthy'
-      let httpStatus = 200
+      let httpStatus     = 200
 
       try {
         await prisma.$queryRaw`SELECT 1`
       } catch {
         databaseStatus = 'unhealthy'
-        httpStatus = 503
+        httpStatus     = 503
       }
 
       return reply.status(httpStatus).send({
@@ -115,10 +126,16 @@ export async function buildApp(): Promise<FastifyInstance> {
   )
 
   // ── Modulos de negocio ─────────────────────────────────────────────────────
-  // Etapa 5: Audit
+
+  // Etapa 5: Auditoria
   await app.register(auditRoutes, { prefix: '/audit' })
 
-  // Etapas futuras — descomentados conforme forem implementados:
+  // Etapa 6: Usuarios — /me registrado sem prefixo (rota raiz)
+  await app.register(meRoutes)
+  await app.register(userRoutes,    { prefix: '/users' })
+  await app.register(companyRoutes, { prefix: '/companies' })
+
+  // Etapas futuras:
   // await app.register(clientRoutes,      { prefix: '/clients' })
   // await app.register(chairRoutes,       { prefix: '/chairs' })
   // await app.register(reservationRoutes, { prefix: '/reservations' })
