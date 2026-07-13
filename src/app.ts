@@ -12,6 +12,7 @@ import { multipartPlugin } from '@/shared/plugins/multipart'
 import { auditRoutes } from '@/modules/audit/audit.routes'
 import { meRoutes, userRoutes } from '@/modules/users/users.routes'
 import { companyRoutes } from '@/modules/companies/companies.routes'
+import { clientRoutes } from '@/modules/clients/clients.routes'
 
 // =============================================================================
 // Factory da Aplicacao Fastify
@@ -33,11 +34,11 @@ import { companyRoutes } from '@/modules/companies/companies.routes'
 //   PATCH /companies/current    → Etapa 6 (companyRoutes)
 //   GET  /audit                 → Etapa 5 (auditRoutes)
 //   GET  /audit/entity/:e/:id   → Etapa 5 (auditRoutes)
+//   CRUD /clients               → Etapa 10 (clientRoutes)
 //
 // Modulos pendentes (descomentados conforme implementados):
-//   /clients       → Etapa 9
-//   /chairs        → Etapa 10
-//   /reservations  → Etapa 11
+//   /chairs        → Etapa 11
+//   /reservations  → Etapa 12
 //   /schedule      → Etapa 13
 //   /deliveries    → Etapa 14
 //   /financial     → Etapa 15
@@ -130,13 +131,15 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Etapa 5: Auditoria
   await app.register(auditRoutes, { prefix: '/audit' })
 
-  // Etapa 6: Usuarios — /me registrado sem prefixo (rota raiz)
+  // Etapa 6: Usuarios e Empresas
   await app.register(meRoutes)
   await app.register(userRoutes,    { prefix: '/users' })
   await app.register(companyRoutes, { prefix: '/companies' })
 
+  // Etapa 10: Clientes
+  await app.register(clientRoutes, { prefix: '/clients' })
+
   // Etapas futuras:
-  // await app.register(clientRoutes,      { prefix: '/clients' })
   // await app.register(chairRoutes,       { prefix: '/chairs' })
   // await app.register(reservationRoutes, { prefix: '/reservations' })
   // await app.register(scheduleRoutes,    { prefix: '/schedule' })
