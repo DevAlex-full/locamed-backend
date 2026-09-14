@@ -63,7 +63,7 @@ async function main(): Promise<void> {
   // Usuario Admin (requer SEED_ADMIN_SUPABASE_ID no .env)
   // ---------------------------------------------------------------------------
   const adminSupabaseId = process.env['SEED_ADMIN_SUPABASE_ID']
-  const adminEmail      = process.env['SEED_ADMIN_EMAIL'] ?? 'admin@poltronas.dev'
+  const adminEmail      = process.env['SEED_ADMIN_EMAIL'] ?? 'alexbueno.tech@gmail.com'
 
   if (!adminSupabaseId) {
     console.warn(' AVISO: SEED_ADMIN_SUPABASE_ID nao configurado.')

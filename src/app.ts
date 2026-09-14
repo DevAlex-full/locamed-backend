@@ -13,31 +13,17 @@ import { auditRoutes } from '@/modules/audit/audit.routes'
 import { meRoutes, userRoutes } from '@/modules/users/users.routes'
 import { companyRoutes } from '@/modules/companies/companies.routes'
 import { clientRoutes } from '@/modules/clients/clients.routes'
+import { chairRoutes } from '@/modules/chairs/chairs.routes'
 
 // =============================================================================
 // Factory da Aplicacao Fastify
 // =============================================================================
 //
-// Ordem de registro:
-//   1. Plugins de infraestrutura (helmet, cors, rate-limit, multipart, swagger)
-//   2. Error handler (captura erros de tudo abaixo)
-//   3. Hook onSend (X-Request-ID em todas as respostas)
-//   4. Rota publica /health
-//   5. Modulos de negocio (cada um com prefixo e autorizacao proprios)
-//
 // Modulos ativos:
-//   GET  /me                    → Etapa 6 (meRoutes)
-//   GET  /users                 → Etapa 6 (userRoutes)
-//   GET  /users/:id             → Etapa 6 (userRoutes)
-//   PATCH /users/:id            → Etapa 6 (userRoutes)
-//   GET  /companies/current     → Etapa 6 (companyRoutes)
-//   PATCH /companies/current    → Etapa 6 (companyRoutes)
-//   GET  /audit                 → Etapa 5 (auditRoutes)
-//   GET  /audit/entity/:e/:id   → Etapa 5 (auditRoutes)
-//   CRUD /clients               → Etapa 10 (clientRoutes)
+//   CRUD /clients  → Etapa 10 (clientRoutes)
+//   CRUD /chairs   → Etapa 11 (chairRoutes)
 //
-// Modulos pendentes (descomentados conforme implementados):
-//   /chairs        → Etapa 11
+// Modulos pendentes:
 //   /reservations  → Etapa 12
 //   /schedule      → Etapa 13
 //   /deliveries    → Etapa 14
@@ -111,9 +97,17 @@ export async function buildApp(): Promise<FastifyInstance> {
 
       try {
         await prisma.$queryRaw`SELECT 1`
-      } catch {
+      } catch (error) {
         databaseStatus = 'unhealthy'
         httpStatus     = 503
+        app.log.error(
+          {
+            err: error instanceof Error
+              ? { message: error.message, name: error.name }
+              : { raw: String(error) },
+          },
+          'Health check: falha na conexao com o banco de dados.',
+        )
       }
 
       return reply.status(httpStatus).send({
@@ -127,20 +121,14 @@ export async function buildApp(): Promise<FastifyInstance> {
   )
 
   // ── Modulos de negocio ─────────────────────────────────────────────────────
-
-  // Etapa 5: Auditoria
-  await app.register(auditRoutes, { prefix: '/audit' })
-
-  // Etapa 6: Usuarios e Empresas
+  await app.register(auditRoutes,   { prefix: '/audit' })
   await app.register(meRoutes)
   await app.register(userRoutes,    { prefix: '/users' })
   await app.register(companyRoutes, { prefix: '/companies' })
-
-  // Etapa 10: Clientes
-  await app.register(clientRoutes, { prefix: '/clients' })
+  await app.register(clientRoutes,  { prefix: '/clients' })
+  await app.register(chairRoutes,   { prefix: '/chairs' })
 
   // Etapas futuras:
-  // await app.register(chairRoutes,       { prefix: '/chairs' })
   // await app.register(reservationRoutes, { prefix: '/reservations' })
   // await app.register(scheduleRoutes,    { prefix: '/schedule' })
   // await app.register(deliveryRoutes,    { prefix: '/deliveries' })
