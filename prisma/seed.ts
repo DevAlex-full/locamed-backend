@@ -1,4 +1,4 @@
-import { PrismaClient, CompanyPlan, ChairStatus } from '@prisma/client'
+﻿import { PrismaClient, CompanyPlan, ChairStatus } from '@prisma/client'
 
 // =============================================================================
 // Seed de Desenvolvimento
