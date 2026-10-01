@@ -14,26 +14,14 @@ import { meRoutes, userRoutes } from '@/modules/users/users.routes'
 import { companyRoutes } from '@/modules/companies/companies.routes'
 import { clientRoutes } from '@/modules/clients/clients.routes'
 import { chairRoutes } from '@/modules/chairs/chairs.routes'
+import { reservationRoutes } from '@/modules/reservations/reservations.routes'
+import { availabilityRoutes } from '@/modules/availability/routes/availability.routes'
+import { deliveryRoutes } from '@/modules/deliveries/deliveries.routes'
+import { partnerRoutes } from '@/modules/partners/routes/partner.routes'
 
-// =============================================================================
-// Factory da Aplicacao Fastify
-// =============================================================================
-//
-// Modulos ativos:
-//   CRUD /clients  → Etapa 10 (clientRoutes)
-//   CRUD /chairs   → Etapa 11 (chairRoutes)
-//
-// Modulos pendentes:
-//   /reservations  → Etapa 12
-//   /schedule      → Etapa 13
-//   /deliveries    → Etapa 14
-//   /financial     → Etapa 15
-//   /webhooks      → Etapa 16
-//   /contracts     → Etapa 17
-//   /partners      → Etapa 19
-//   /commissions   → Etapa 20
-//   /reports       → Etapa 22
-// =============================================================================
+import { financialRoutes } from '@/modules/financial/financial.routes'
+import { commissionRoutes } from '@/modules/commissions/routes/commission.routes'
+
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -44,7 +32,6 @@ export async function buildApp(): Promise<FastifyInstance> {
     bodyLimit:         5 * 1024 * 1024,
   })
 
-  // ── Plugins de infraestrutura ──────────────────────────────────────────────
   await app.register(helmetPlugin)
   await app.register(corsPlugin)
   await app.register(rateLimitPlugin)
@@ -52,13 +39,11 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(swaggerPlugin)
   await app.register(errorHandlerPlugin)
 
-  // ── Hook: X-Request-ID em todas as respostas ───────────────────────────────
   app.addHook('onSend', (_request, reply, _payload, done) => {
     void reply.header('X-Request-ID', _request.id)
     done()
   })
 
-  // ── Rota publica: Health Check ─────────────────────────────────────────────
   app.get(
     '/health',
     {
@@ -100,14 +85,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       } catch (error) {
         databaseStatus = 'unhealthy'
         httpStatus     = 503
-        app.log.error(
-          {
-            err: error instanceof Error
-              ? { message: error.message, name: error.name }
-              : { raw: String(error) },
-          },
-          'Health check: falha na conexao com o banco de dados.',
-        )
+        app.log.error({ err: error }, 'Health check: falha na conexao com o banco de dados.')
       }
 
       return reply.status(httpStatus).send({
@@ -120,24 +98,18 @@ export async function buildApp(): Promise<FastifyInstance> {
     },
   )
 
-  // ── Modulos de negocio ─────────────────────────────────────────────────────
   await app.register(auditRoutes,   { prefix: '/audit' })
   await app.register(meRoutes)
   await app.register(userRoutes,    { prefix: '/users' })
   await app.register(companyRoutes, { prefix: '/companies' })
-  await app.register(clientRoutes,  { prefix: '/clients' })
-  await app.register(chairRoutes,   { prefix: '/chairs' })
-
-  // Etapas futuras:
-  // await app.register(reservationRoutes, { prefix: '/reservations' })
-  // await app.register(scheduleRoutes,    { prefix: '/schedule' })
-  // await app.register(deliveryRoutes,    { prefix: '/deliveries' })
-  // await app.register(financialRoutes,   { prefix: '/financial' })
-  // await app.register(webhookRoutes,     { prefix: '/webhooks' })
-  // await app.register(contractRoutes,    { prefix: '/contracts' })
-  // await app.register(partnerRoutes,     { prefix: '/partners' })
-  // await app.register(commissionRoutes,  { prefix: '/commissions' })
-  // await app.register(reportRoutes,      { prefix: '/reports' })
+  await app.register(clientRoutes,      { prefix: '/clients' })
+  await app.register(chairRoutes,       { prefix: '/chairs' })
+  await app.register(reservationRoutes, { prefix: '/reservations' })
+  await app.register(availabilityRoutes, { prefix: '/availability' })
+  await app.register(deliveryRoutes,    { prefix: '/deliveries' })
+  await app.register(partnerRoutes,     { prefix: '/partners' })
+  await app.register(commissionRoutes, { prefix: '/commissions' })
+  await app.register(financialRoutes,   { prefix: '/financial' })
 
   return app
 }

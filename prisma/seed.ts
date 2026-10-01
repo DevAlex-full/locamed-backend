@@ -1,4 +1,5 @@
 ﻿import { PrismaClient, CompanyPlan, ChairStatus } from '@prisma/client'
+import { createClient } from '@supabase/supabase-js'
 
 // =============================================================================
 // Seed de Desenvolvimento
@@ -25,6 +26,18 @@
 // =============================================================================
 
 const prisma = new PrismaClient()
+
+// =============================================================================
+// Supabase Admin Client — usado APENAS no seed para configurar app_metadata
+// =============================================================================
+// SUPABASE_SERVICE_ROLE_KEY e um segredo. Nunca commitar, nunca logar o valor.
+// O cliente abaixo desativa auto-refresh e session para uso em scripts CLI.
+const supabaseUrl        = process.env['SUPABASE_URL']              ?? ''
+const supabaseServiceKey = process.env['SUPABASE_SERVICE_ROLE_KEY'] ?? ''
+
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+  auth: { autoRefreshToken: false, persistSession: false },
+})
 
 async function main(): Promise<void> {
   console.log('\n Iniciando seed de desenvolvimento...\n')
@@ -70,25 +83,65 @@ async function main(): Promise<void> {
     console.warn('        Crie um usuario no Supabase Auth e configure no .env.')
     console.warn(`        ID da empresa para usar: ${company.id}\n`)
   } else {
-    const admin = await prisma.user.upsert({
-      where: { id: adminSupabaseId },
-      update: {
-        name: 'Administrador',
-        role: 'admin',
-        active: true,
-      },
-      create: {
-        id: adminSupabaseId,
-        company_id: company.id,
-        name: 'Administrador',
-        email: adminEmail,
-        role: 'admin',
-        active: true,
-      },
-    })
+    // ── 1. Verificar se o usuario existe no Supabase Auth ──────────────────
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.warn(' AVISO: SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY nao configurados.')
+      console.warn('        app_metadata NAO sera sincronizado.\n')
+    } else {
+      const { data: authUser, error: getError } =
+        await supabaseAdmin.auth.admin.getUserById(adminSupabaseId)
 
-    console.log(` Admin: ${admin.email} (${admin.role})`)
-    console.log(`   ID: ${admin.id}\n`)
+      if (getError || !authUser?.user) {
+        console.error(
+          ` ERRO: Usuario Auth nao encontrado para ID: ${adminSupabaseId}`,
+        )
+        console.error(
+          '       Crie o usuario no Supabase Dashboard > Authentication > Users',
+        )
+        console.error('       e copie o UUID gerado para SEED_ADMIN_SUPABASE_ID no .env\n')
+        throw new Error(`Usuario Auth nao encontrado: ${adminSupabaseId}`)
+      }
+
+      // ── 2. Upsert na tabela users (banco local) ───────────────────────────
+      const admin = await prisma.user.upsert({
+        where: { id: adminSupabaseId },
+        update: {
+          name:       'Administrador',
+          role:       'admin',
+          active:     true,
+          company_id: company.id,  // garante sincronismo se empresa mudou no seed
+        },
+        create: {
+          id:         adminSupabaseId,
+          company_id: company.id,
+          name:       'Administrador',
+          email:      adminEmail,
+          role:       'admin',
+          active:     true,
+        },
+      })
+
+      // ── 3. Sincronizar app_metadata no Supabase Auth ──────────────────────
+      // O authenticate.ts do backend valida app_metadata.company_id e role.
+      // Sem isso, o JWT nao contem esses campos e o backend retorna 401.
+      const { error: updateError } =
+        await supabaseAdmin.auth.admin.updateUserById(adminSupabaseId, {
+          app_metadata: {
+            company_id: company.id,
+            role:       'admin',
+          },
+        })
+
+      if (updateError) {
+        console.error(' ERRO ao sincronizar app_metadata:', updateError.message)
+        throw new Error(`Falha na sincronizacao do Auth: ${updateError.message}`)
+      }
+
+      // Logar apenas informacoes seguras — NUNCA logar tokens ou chaves
+      console.log(` Admin: ${admin.email} (${admin.role})`)
+      console.log(`   ID: ${admin.id}`)
+      console.log(`   Auth sincronizado: company_id=${company.id} | role=admin\n`)
+    }
   }
 
   // ---------------------------------------------------------------------------
