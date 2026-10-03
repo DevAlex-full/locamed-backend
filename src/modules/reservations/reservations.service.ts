@@ -13,6 +13,8 @@ import type {
 import { auditService, AuditAction } from '@/modules/audit/audit.service'
 import { ReservationRepository } from './reservations.repository'
 import { ChairBlockRepository } from '@/modules/chair_blocks/chair_blocks.repository'
+import { FinancialRepository } from '@/modules/financial/repositories/financial.repository'
+import { FinancialService } from '@/modules/financial/services/financial.service'
 import {
   toReservationDto,
   calcTotalDays,
@@ -61,6 +63,8 @@ export interface RequestContext {
 const INCOMPATIBLE_CHAIR_STATUSES = ['maintenance', 'inactive', 'sanitization'] as const
 
 const repository = new ReservationRepository(prisma)
+const financialRepository = new FinancialRepository(prisma)
+const financialService = new FinancialService(financialRepository)
 
 export const reservationsService = {
   async findAll(
@@ -160,6 +164,14 @@ const reservation = await prisma.$transaction(async (tx) => {
         },
         tx,
       )
+
+      await financialService.createTransaction(actor.id, companyId, {
+        reservationId: createdReservation.id,
+        type: 'charge',
+        amount: finalAmount,
+        dueDate: new Date(new Date().getTime() + 7 * 24 * 60 * 60 * 1000), // Default 7 days
+        description: `Cobrança da reserva ${createdReservation.id} - Poltrona ${chair.code}`,
+      })
 
       await tx.chair.update({
         where: { id: body.chairId },

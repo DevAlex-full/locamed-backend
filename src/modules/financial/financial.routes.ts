@@ -76,19 +76,6 @@ export const financialRoutes: FastifyPluginCallback = (app, _opts, done) => {
         tags:    ['Financial'],
         summary: 'Criar transação financeira',
         security: [{ BearerAuth: [] }],
-        body: {
-          type: 'object',
-          required: ['reservationId', 'type', 'amount', 'dueDate', 'description'],
-          properties: {
-            reservationId: { type: 'string', format: 'uuid' },
-            type: { type: 'string', enum: ['charge', 'refund', 'commission_payment'] },
-            amount: { type: 'number', minimum: 0.01 },
-            paymentMethod: { type: 'string' },
-            dueDate: { type: 'string', format: 'date-time' },
-            description: { type: 'string', minLength: 3 },
-            metadata: { type: 'object' },
-          },
-        },
       },
     },
     async (request, reply) => {
@@ -113,19 +100,6 @@ export const financialRoutes: FastifyPluginCallback = (app, _opts, done) => {
         tags:    ['Financial'],
         summary: 'Atualizar status da transação',
         security: [{ BearerAuth: [] }],
-        params: {
-          type: 'object',
-          required: ['id'],
-          properties: { id: { type: 'string', format: 'uuid' } },
-        },
-        body: {
-          type: 'object',
-          required: ['status'],
-          properties: {
-            status: { type: 'string' },
-            paidAt: { type: 'string', format: 'date-time' },
-          },
-        },
       },
     },
     async (request, reply) => {

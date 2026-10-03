@@ -72,7 +72,6 @@ export const contractRoutes: FastifyPluginCallback = (app, _opts, done) => {
         tags:    ['Contracts'],
         summary: 'Criar contrato para reserva',
         security: [{ BearerAuth: [] }],
-        body: contractSchema,
       },
     },
     async (request, reply) => {

@@ -2,6 +2,7 @@ import { FinancialTransaction, CreateFinancialTransactionData, FinancialTransact
 import { IFinancialRepository } from '../repositories/financial.repository'
 import { auditService as defaultAuditService } from '@/modules/audit/audit.service'
 import { Decimal } from '@prisma/client/runtime/library'
+import { reservationsService } from '@/modules/reservations/reservations.service'
 
 export class FinancialService {
   constructor(
@@ -68,6 +69,9 @@ export class FinancialService {
   async confirmPayment(paymentId: string, amount: number, userId: string, companyId: string) {
     // In a real scenario, we would lookup the transaction by paymentId (Asaas ID)
     // and mark it as PAID.
+    const transaction = await this.repository.findById(paymentId, companyId)
+    if (!transaction) throw new Error('Transação não encontrada')
+
     await this.repository.updateStatus(paymentId, companyId, 'paid');
     
     await this.auditService.log({
@@ -78,5 +82,16 @@ export class FinancialService {
       entityId: paymentId,
       newValues: { status: 'PAID', amount },
     });
+
+    // AUTOMATION: If this payment is linked to a reservation, confirm the reservation
+    if (transaction.reservation_id) {
+      await reservationsService.updateStatus(
+        transaction.reservation_id,
+        companyId,
+        { status: 'confirmed' },
+        { id: userId, companyId },
+        { ip: null, userAgent: null }
+      )
+    }
   }
 }

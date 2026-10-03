@@ -18,7 +18,7 @@ import { reservationRoutes } from '@/modules/reservations/reservations.routes'
 import { availabilityRoutes } from '@/modules/availability/routes/availability.routes'
 import { deliveryRoutes } from '@/modules/deliveries/deliveries.routes'
 import { partnerRoutes } from '@/modules/partners/routes/partner.routes'
-
+import { contractRoutes } from '@/modules/contracts/contracts.routes'
 import { financialRoutes } from '@/modules/financial/financial.routes'
 import { commissionRoutes } from '@/modules/commissions/routes/commission.routes'
 
@@ -108,6 +108,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(availabilityRoutes, { prefix: '/availability' })
   await app.register(deliveryRoutes,    { prefix: '/deliveries' })
   await app.register(partnerRoutes,     { prefix: '/partners' })
+  await app.register(contractRoutes,    { prefix: '/contracts' })
   await app.register(commissionRoutes, { prefix: '/commissions' })
   await app.register(financialRoutes,   { prefix: '/financial' })
 
