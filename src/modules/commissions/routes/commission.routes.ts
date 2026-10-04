@@ -10,7 +10,7 @@ export async function commissionRoutes(fastify: FastifyInstance) {
   fastify.post('/', async (request, reply) => {
     try {
       const data = CommissionSchema.parse(request.body);
-      const { userId, companyId } = request.user as any;
+      const { userId, companyId } = request.user as AuthenticatedUser;
       const commission = await service.calculateAndCreate(userId, companyId, data);
       return reply.status(201).send(commission);
     } catch (error: any) {
@@ -19,7 +19,7 @@ export async function commissionRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/', async (request) => {
-    const { companyId } = request.user as any;
+    const { companyId } = request.user as AuthenticatedUser;
     const { page = 1, limit = 20, ...filters } = request.query as any;
     const skip = (page - 1) * limit;
     
@@ -36,7 +36,7 @@ export async function commissionRoutes(fastify: FastifyInstance) {
   fastify.patch('/:id/pay', async (request, reply) => {
     try {
       const { id } = request.params as any;
-      const { userId, companyId } = request.user as any;
+      const { userId, companyId } = request.user as AuthenticatedUser;
       const { paymentDate } = request.body as any;
       
       if (!paymentDate) return reply.status(400).send({ error: 'paymentDate is required' });

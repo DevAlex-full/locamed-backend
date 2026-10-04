@@ -12,7 +12,7 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
       const data = AvailabilitySchema.parse(request.body);
       const block = await service.blockDate(data);
       return reply.status(201).send(block);
-    } catch (error: any) {
+    } catch (error: unknown) {
       return reply.status(400).send({ error: error.message });
     }
   });
